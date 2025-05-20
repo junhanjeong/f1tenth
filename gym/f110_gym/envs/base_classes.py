@@ -430,7 +430,8 @@ class Simulator(object):
         new_collisions, self.collision_idx = collision_multiple(all_vertices)
 
         # if collision becomes 1, it stays so until end
-        self.collisions = np.maximum(self.collisions, new_collisions)
+        # self.collisions = np.maximum(self.collisions, new_collisions)
+        self.collisions = new_collisions
 
     def step(self, control_inputs):
         """
