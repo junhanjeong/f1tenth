@@ -170,7 +170,11 @@ def main():
     for n_epi in range(10000):
         epsilon = max(0.01, 0.08 - 0.01 * (n_epi / 200))  # Linear annealing from 8% to 1%
         obs, r, done, info = env.reset(poses=poses)
-        s = preprocess_lidar(obs['scans'][0])
+        # s = preprocess_lidar(obs['scans'][0])
+        lidar = preprocess_lidar(obs['scans'][0])
+        speed = np.array([obs['linear_vels_x'][0]])
+        yaw = np.array([obs['poses_theta'][0]])
+        s = np.concatenate([lidar, speed, yaw])
         done = False
 
         laptime = 0.0
