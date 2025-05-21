@@ -68,10 +68,10 @@ class ReplayBuffer():
 class Qnet(nn.Module):
     def __init__(self):
         super(Qnet, self).__init__()
-        self.fc1 = nn.Linear(405, 256)
+        self.fc1 = nn.Linear(407, 256) # 405
         self.fc2 = nn.Linear(256, 128)
         self.fc3 = nn.Linear(128, 128)
-        self.fc4 = nn.Linear(128, 5)
+        self.fc4 = nn.Linear(128, 21) # 5
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -82,12 +82,12 @@ class Qnet(nn.Module):
 
     def sample_action(self, obs, epsilon, memory_size):
         if memory_size < train_start:
-            return random.randint(0, 4)
+            return random.randint(0, 20)
         else:
             out = self.forward(obs)
             coin = random.random()
             if coin < epsilon:
-                return random.randint(0, 4)
+                return random.randint(0, 20)
             else:
                 return out.argmax().item()
 
@@ -136,6 +136,13 @@ def preprocess_lidar(ranges):
 
     return np.array(ranges[eighth:-eighth: 2])
 
+STEER_VALUES = np.linspace(-np.pi/15, np.pi/15, 7)
+SPEED_VALUES = [2.0, 3.0, 4.0]
+def decode_action(action_idx):
+    steer_idx = action_idx // len(SPEED_VALUES)
+    speed_idx = action_idx % len(SPEED_VALUES)
+    return STEER_VALUES[steer_idx], SPEED_VALUES[speed_idx]
+
 
 def main():
     today = get_today()
@@ -174,17 +181,25 @@ def main():
             actions = []
 
             a = q.sample_action(torch.from_numpy(s).float(), epsilon, memory.size())
-            steer = (a - 2) * (np.pi / 30)
-            if a == 2:
-                speed = 5.0
-            elif a == 1 or a == 3:
-                speed = 4.5
-            else:
-                speed = 4.0
+            steer, speed = decode_action(a)
+
+            # a = q.sample_action(torch.from_numpy(s).float(), epsilon, memory.size())
+            # steer = (a - 2) * (np.pi / 30)
+            # if a == 2:
+            #     speed = 5.0
+            # elif a == 1 or a == 3:
+            #     speed = 4.5
+            # else:
+            #     speed = 4.0
             actions.append([steer, speed])
             actions = np.array(actions)
             obs, r, done, info = env.step(actions)
-            s_prime = preprocess_lidar(obs['scans'][0])
+            # s_prime = preprocess_lidar(obs['scans'][0])
+            lidar_prime = preprocess_lidar(obs['scans'][0])
+            speed_prime = np.array([obs['linear_vels_x'][0]])
+            yaw_prime = np.array([obs['poses_theta'][0]])
+            s_prime = np.concatenate([lidar_prime, speed_prime, yaw_prime])
+
             done_mask = 0.0 if done else 1.0
             memory.put((s, a, r / 100, s_prime, done_mask))
             s = s_prime
@@ -225,7 +240,11 @@ def eval():
     speed = 3.0
     for t in range(5):
         obs, r, done, info = env.reset(poses=poses)
-        s = preprocess_lidar(obs['scans'][0])
+        # s = preprocess_lidar(obs['scans'][0])
+        lidar = preprocess_lidar(obs['scans'][0])
+        speed = np.array([obs['linear_vels_x'][0]])
+        yaw = np.array([obs['poses_theta'][0]])
+        s = np.concatenate([lidar, speed, yaw])
 
         env.render()
         done = False
