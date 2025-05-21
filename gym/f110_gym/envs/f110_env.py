@@ -687,7 +687,7 @@ class F110Env(gym.Env, utils.EzPickle):
                 continue
             if obs['poses_x'][0] > goal[0] - 0.5 and obs['poses_x'][0] < goal[0] + 0.5 and obs['poses_y'][0] > goal[
                 1] - 0.5 and obs['poses_y'][0] < goal[1] + 0.5:
-                print('goal pass')
+                # print('goal pass')
                 self.checklist[i] = 1
                 reward += 10 # 5
         
