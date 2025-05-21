@@ -31,25 +31,44 @@ sys.path.append(current_dir)
 
 RACETRACK = 'map_easy3'
 
-
 def get_today():
     now = time.localtime()
     s = "%04d-%02d-%02d_%02d-%02d-%02d" % (now.tm_year, now.tm_mon, now.tm_mday, now.tm_hour, now.tm_min, now.tm_sec)
     return s
 
-
-class ReplayBuffer():
-    def __init__(self):
-        self.buffer = collections.deque(maxlen=buffer_limit)
+class PrioritizedReplayBuffer():
+    def __init__(self, alpha=0.6):
+        self.buffer = []
+        self.priorities = []
+        self.maxlen = buffer_limit
+        self.alpha = alpha
+        self.pos = 0
 
     def put(self, transition):
-        self.buffer.append(transition)
+        max_prio = max(self.priorities, default=1.0)
+        if len(self.buffer) < self.maxlen:
+            self.buffer.append(transition)
+            self.priorities.append(max_prio)
+        else:
+            self.buffer[self.pos] = transition
+            self.priorities[self.pos] = max_prio
+            self.pos = (self.pos + 1) % self.maxlen
 
-    def sample(self, n):
-        mini_batch = random.sample(self.buffer, n)
+    def sample(self, n, beta=0.4):
+        if len(self.buffer) == 0:
+            raise ValueError("Buffer is empty")
+        prios = np.array(self.priorities) ** self.alpha
+        probs = prios / prios.sum()
+        indices = np.random.choice(len(self.buffer), n, p=probs)
+        samples = [self.buffer[idx] for idx in indices]
+
+        total = len(self.buffer)
+        weights = (total * probs[indices]) ** (-beta)
+        weights /= weights.max()
+
+        # unpack
         s_lst, a_lst, r_lst, s_prime_lst, done_mask_lst = [], [], [], [], []
-
-        for transition in mini_batch:
+        for transition in samples:
             s, a, r, s_prime, done_mask = transition
             s_lst.append(s)
             a_lst.append([a])
@@ -57,21 +76,30 @@ class ReplayBuffer():
             s_prime_lst.append(s_prime)
             done_mask_lst.append([done_mask])
 
-        return torch.tensor(s_lst, dtype=torch.float), torch.tensor(a_lst, dtype=torch.long), \
-            torch.tensor(r_lst, dtype=torch.float), torch.tensor(s_prime_lst, dtype=torch.float), \
-            torch.tensor(done_mask_lst, dtype=torch.float)
+        return (
+            torch.tensor(s_lst, dtype=torch.float),
+            torch.tensor(a_lst, dtype=torch.long),
+            torch.tensor(r_lst, dtype=torch.float),
+            torch.tensor(s_prime_lst, dtype=torch.float),
+            torch.tensor(done_mask_lst, dtype=torch.float),
+            torch.tensor(weights, dtype=torch.float),
+            indices
+        )
+
+    def update_priorities(self, indices, td_errors):
+        for idx, td_error in zip(indices, td_errors):
+            self.priorities[idx] = abs(td_error.item()) + 1e-6  # epsilon to avoid zero
 
     def size(self):
         return len(self.buffer)
 
-
 class Qnet(nn.Module):
     def __init__(self):
         super(Qnet, self).__init__()
-        self.fc1 = nn.Linear(56, 256) # 405
+        self.fc1 = nn.Linear(56, 256)
         self.fc2 = nn.Linear(256, 128)
         self.fc3 = nn.Linear(128, 128)
-        self.fc4 = nn.Linear(128, 7) # 5
+        self.fc4 = nn.Linear(128, 7)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -95,7 +123,6 @@ class Qnet(nn.Module):
         out = self.forward(obs)
         return out.argmax().item()
 
-
 def plot_durations(laptimes):
     plt.figure(2)
     plt.clf()
@@ -115,29 +142,32 @@ def plot_durations(laptimes):
         display.clear_output(wait=True)
         display.display(plt.gcf())
 
-
-def train(q, q_target, memory, optimizer):
+def train_double_per(q, q_target, memory, optimizer, beta=0.4):
     for i in range(10):
-        s, a, r, s_prime, done_mask = memory.sample(batch_size)
+        s, a, r, s_prime, done_mask, weights, indices = memory.sample(batch_size, beta=beta)
 
+        # Double DQN
         q_out = q(s)
         q_a = q_out.gather(1, a)
-        max_q_prime = q_target(s_prime).max(1)[0].unsqueeze(1)
+        next_q_values = q(s_prime)
+        next_actions = next_q_values.argmax(dim=1, keepdim=True)
+        next_q_target = q_target(s_prime)
+        max_q_prime = next_q_target.gather(1, next_actions)
         target = r + gamma * max_q_prime * done_mask
-        loss = F.smooth_l1_loss(q_a, target)
+
+        td_errors = q_a - target.detach()
+        loss = (F.smooth_l1_loss(q_a, target, reduction='none') * weights.unsqueeze(1)).mean()
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
+        # priority update
+        memory.update_priorities(indices, td_errors.squeeze().abs())
 
 def preprocess_lidar(ranges):
-    # eighth = int(len(ranges) / 8)
-
-    # return np.array(ranges[eighth:-eighth: 2])
     return np.array(ranges[::20])
 
-# STEER_VALUES = np.linspace(-np.pi/15, np.pi/15, 7) # -12 12
 STEER_LIMIT = 0.4189
 N_STEER = 7
 STEER_VALUES = np.linspace(-STEER_LIMIT, STEER_LIMIT, N_STEER)
@@ -146,7 +176,6 @@ def decode_action(action_idx):
     steer_idx = action_idx // len(SPEED_VALUES)
     speed_idx = action_idx % len(SPEED_VALUES)
     return STEER_VALUES[steer_idx], SPEED_VALUES[speed_idx]
-
 
 def main():
     today = get_today()
@@ -157,14 +186,11 @@ def main():
                    map="{}/maps/{}".format(current_dir, RACETRACK),
                    map_ext=".png", num_agents=1)
     q = Qnet()
-    # q.load_state_dict(torch.load("{}\weigths\model_state_dict_easy1_fin.pt".format(current_dir)))
     q_target = Qnet()
     q_target.load_state_dict(q.state_dict())
-    memory = ReplayBuffer()
+    memory = PrioritizedReplayBuffer()
 
     poses = np.array([[0., 0., np.radians(270)]])
-    # poses = np.array([[0.8007017, -0.2753365, 4.1421595]])
-
     print_interval = 10
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)
     speed = 3.0
@@ -174,7 +200,6 @@ def main():
     for n_epi in range(10000):
         epsilon = max(0.01, 0.08 - 0.01 * (n_epi / 200))  # Linear annealing from 8% to 1%
         obs, r, done, info = env.reset(poses=poses)
-        # s = preprocess_lidar(obs['scans'][0])
         lidar = preprocess_lidar(obs['scans'][0])
         speed = np.array([obs['linear_vels_x'][0]])
         yaw = np.array([obs['poses_theta'][0]])
@@ -184,25 +209,12 @@ def main():
         laptime = 0.0
 
         while not done:
-            # env.render(mode='human_fast')
-
             actions = []
-
             a = q.sample_action(torch.from_numpy(s).float(), epsilon, memory.size())
             steer, speed = decode_action(a)
-
-            # a = q.sample_action(torch.from_numpy(s).float(), epsilon, memory.size())
-            # steer = (a - 2) * (np.pi / 30)
-            # if a == 2:
-            #     speed = 5.0
-            # elif a == 1 or a == 3:
-            #     speed = 4.5
-            # else:
-            #     speed = 4.0
             actions.append([steer, speed])
             actions = np.array(actions)
             obs, r, done, info = env.step(actions)
-            # s_prime = preprocess_lidar(obs['scans'][0])
             lidar_prime = preprocess_lidar(obs['scans'][0])
             speed_prime = np.array([obs['linear_vels_x'][0]])
             yaw_prime = np.array([obs['poses_theta'][0]])
@@ -226,7 +238,7 @@ def main():
                     break
 
         if memory.size() > train_start:
-            train(q, q_target, memory, optimizer)
+            train_double_per(q, q_target, memory, optimizer)
 
         if n_epi % print_interval == 0 and n_epi != 0:
             q_target.load_state_dict(q.state_dict())
@@ -250,7 +262,6 @@ def eval():
     speed = 3.0
     for t in range(5):
         obs, r, done, info = env.reset(poses=poses)
-        # s = preprocess_lidar(obs['scans'][0])
         lidar = preprocess_lidar(obs['scans'][0])
         speed = np.array([obs['linear_vels_x'][0]])
         yaw = np.array([obs['poses_theta'][0]])
@@ -263,21 +274,15 @@ def eval():
 
         while not done:
             actions = []
-
             a = q.action(torch.from_numpy(s).float())
-            steer = (a - 2) * (np.pi / 30)
-            '''if a == 2:
-                speed = 5.0
-            elif a == 1 or a == 3:
-                speed = 4.5
-            else:
-                speed = 4.0'''
+            steer, speed = decode_action(a)
             actions.append([steer, speed])
             actions = np.array(actions)
             obs, r, done, info = env.step(actions)
-            s_prime = preprocess_lidar(obs['scans'][0])
-
-            s = s_prime
+            lidar_prime = preprocess_lidar(obs['scans'][0])
+            speed_prime = np.array([obs['linear_vels_x'][0]])
+            yaw_prime = np.array([obs['poses_theta'][0]])
+            s = np.concatenate([lidar_prime, speed_prime, yaw_prime])
 
             laptime += r
             env.render(mode='human_fast')
@@ -307,7 +312,6 @@ def plot_durations_save(laptimes, save_path=None):
         display.clear_output(wait=True)
         display.display(plt.gcf())
 
-        
 if __name__ == '__main__':
     main()
     # eval()

@@ -673,7 +673,7 @@ class F110Env(gym.Env, utils.EzPickle):
         # times
         # reward = 1000 * self.timestep
         # 1. 기본 시간 penalty (느리게 돌면 불리!)
-        reward = -0.01
+        reward = 0.01 # -0.01
         # if np.argmin(obs['scans'][0]) >= 300 and np.argmin(obs['scans'][0]) <= 780:
         #     reward -= 1
         # elif np.argmin(obs['scans'][0]) < 300 or np.argmin(obs['scans'][0]) > 780:
@@ -702,7 +702,7 @@ class F110Env(gym.Env, utils.EzPickle):
             obs['poses_y'][0] - goal[1]
         ])
         if prev_dist is not None:
-            reward += (prev_dist - now_dist) * 5.0  # scale은 실험적으로 조정
+            reward += (prev_dist - now_dist) * 8.0  # scale은 실험적으로 조정
         self.prev_dist = now_dist  # 다음 step을 위해 기록
         
         if abs(obs['poses_x'][0] - goal[0]) < 0.5 and abs(obs['poses_y'][0] - goal[1]) < 0.5:
