@@ -657,22 +657,41 @@ class F110Env(gym.Env, utils.EzPickle):
 
         self.current_obs = obs
         # times
-        reward = 1000 * self.timestep
-        if np.argmin(obs['scans'][0]) >= 300 and np.argmin(obs['scans'][0]) <= 780:
-            reward -= 1
-        elif np.argmin(obs['scans'][0]) < 300 or np.argmin(obs['scans'][0]) > 780:
-            reward += 2
+        # reward = 1000 * self.timestep
+        # 1. 기본 시간 penalty (느리게 돌면 불리!)
+        reward = -0.1
+        # if np.argmin(obs['scans'][0]) >= 300 and np.argmin(obs['scans'][0]) <= 780:
+        #     reward -= 1
+        # elif np.argmin(obs['scans'][0]) < 300 or np.argmin(obs['scans'][0]) > 780:
+        #     reward += 2
         if min(obs['scans'][0]) < 0.5:
-            reward -= 5
+            reward -= 2 # 5
 
-        '''for i, goal in enumerate(goals):
+        # 2. 체크포인트 도달 보상
+        for i, goal in enumerate(goals):
             if self.checklist[i] == 1:
                 continue
             if obs['poses_x'][0] > goal[0] - 0.5 and obs['poses_x'][0] < goal[0] + 0.5 and obs['poses_y'][0] > goal[
                 1] - 0.5 and obs['poses_y'][0] < goal[1] + 0.5:
                 print('goal pass')
                 self.checklist[i] = 1
-                reward += 5'''
+                reward += 10 # 5
+        
+        # 3. 충돌시 패널티
+        if self.collisions[self.ego_idx]:
+            reward = -100
+            done = True
+        else:
+            done = False
+
+        # 4. 최종 완주 보상
+        if self.lap_counts[0] > 0 and self.lap_counts[0] != self.pre_lap_counts[0]:
+            reward += 100  # 한 바퀴 돌았을 때 추가 보상
+            self.checklist = np.zeros((len(goals),))
+
+        # 5. 충돌/완주로 인한 done 체크
+        if done or np.all(self.checklist):  # 모든 goal 다 지나면 종료할지 여부 결정(필요시)
+            done = True
 
         self.current_time = self.current_time + self.timestep
 
@@ -682,10 +701,10 @@ class F110Env(gym.Env, utils.EzPickle):
         # check done
         done, toggle_list = self._check_done()
         info = {'checkpoint_done': toggle_list}
-        if self.collisions[self.ego_idx]:
-            reward = 0
-        if self.lap_counts[0] != self.pre_lap_counts[0]:
-            self.checklist = np.zeros((15))
+        # if self.collisions[self.ego_idx]:
+        #     reward = 0
+        # if self.lap_counts[0] != self.pre_lap_counts[0]:
+        #     self.checklist = np.zeros((15))
 
         return obs, reward, done, info
 
