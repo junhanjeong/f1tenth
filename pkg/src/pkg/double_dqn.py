@@ -194,7 +194,7 @@ def main():
     print_interval = 10
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)
     speed = 3.0
-    fastlap = 10000.0
+    fastlap = 100000.0
     laptimes = []
     
     # === step 단위 학습을 위한 변수 추가 ===
@@ -202,7 +202,7 @@ def main():
     target_update_steps = 5000  # target network를 5000 step마다 동기화
 
     for n_epi in range(10000):
-        epsilon = max(0.01, 0.15 - 0.14 * (total_steps / 30000))  # 3만 step 동안 선형 감소
+        epsilon = max(0.01, 0.15 - 0.14 * (total_steps / 10000))  # 1만 step 동안 선형 감소
         obs, r, done, info = env.reset(poses=poses)
         lidar = preprocess_lidar(obs['scans'][0])
         speed = np.array([obs['linear_vels_x'][0]])
@@ -245,10 +245,11 @@ def main():
             if done:
                 laptimes.append(laptime)
                 lap = round(obs['lap_times'][0], 3)
-                if int(obs['lap_counts'][0]) == 2 and fastlap > lap:
-                    torch.save(q.state_dict(), work_dir + '_' + RACETRACK + '/fast-model' + str(
-                        round(obs['lap_times'][0], 3)) + '_' + str(n_epi) + '.pt')
-                    fastlap = lap
+                if int(obs['lap_counts'][0]) == 2:
+                    if fastlap > lap:
+                        torch.save(q.state_dict(), work_dir + '_' + RACETRACK + '/fast-model' + str(
+                            round(obs['lap_times'][0], 3)) + '_' + str(n_epi) + '.pt')
+                        fastlap = lap
                     break
 
         if n_epi % print_interval == 0 and n_epi != 0:
