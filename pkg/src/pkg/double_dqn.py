@@ -20,11 +20,11 @@ if is_ipython:
 plt.ion()
 
 # Hyperparameters
-learning_rate = 0.00005
+learning_rate = 0.0003
 gamma = 0.98
 buffer_limit = 50000
 batch_size = 32
-train_start = 20000
+train_start = 10000
 
 current_dir = os.path.abspath(os.path.dirname(__file__))
 sys.path.append(current_dir)
@@ -143,7 +143,7 @@ def plot_durations(laptimes):
         display.display(plt.gcf())
 
 def train_double_per(q, q_target, memory, optimizer, beta=0.4):
-    for i in range(10):
+    for i in range(1):
         s, a, r, s_prime, done_mask, weights, indices = memory.sample(batch_size, beta=beta)
 
         # Double DQN
@@ -196,9 +196,13 @@ def main():
     speed = 3.0
     fastlap = 10000.0
     laptimes = []
+    
+    # === step 단위 학습을 위한 변수 추가 ===
+    total_steps = 0
+    target_update_steps = 5000  # target network를 5000 step마다 동기화
 
     for n_epi in range(10000):
-        epsilon = max(0.01, 0.08 - 0.01 * (n_epi / 200))  # Linear annealing from 8% to 1%
+        epsilon = max(0.01, 0.15 - 0.14 * (total_steps / 30000))  # 3만 step 동안 선형 감소
         obs, r, done, info = env.reset(poses=poses)
         lidar = preprocess_lidar(obs['scans'][0])
         speed = np.array([obs['linear_vels_x'][0]])
@@ -221,15 +225,25 @@ def main():
             s_prime = np.concatenate([lidar_prime, speed_prime, yaw_prime])
 
             done_mask = 0.0 if done else 1.0
-            memory.put((s, a, r / 100, s_prime, done_mask))
+            memory.put((s, a, r, s_prime, done_mask))
             s = s_prime
 
             laptime += r
             env.render(mode='human_fast')
 
+            # --- step 단위로 학습 진행 ---
+            if memory.size() > train_start:
+                # 1~4회 중 선택, 보통 1회면 충분
+                train_double_per(q, q_target, memory, optimizer)
+
+                # step 단위로 target network 업데이트
+                if total_steps % target_update_steps == 0:
+                    q_target.load_state_dict(q.state_dict())
+
+            total_steps += 1
+
             if done:
                 laptimes.append(laptime)
-                # plot_durations(laptimes)
                 lap = round(obs['lap_times'][0], 3)
                 if int(obs['lap_counts'][0]) == 2 and fastlap > lap:
                     torch.save(q.state_dict(), work_dir + '_' + RACETRACK + '/fast-model' + str(
@@ -237,11 +251,7 @@ def main():
                     fastlap = lap
                     break
 
-        if memory.size() > train_start:
-            train_double_per(q, q_target, memory, optimizer)
-
         if n_epi % print_interval == 0 and n_epi != 0:
-            q_target.load_state_dict(q.state_dict())
             print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%"
                   .format(n_epi, laptime / print_interval, memory.size(), epsilon * 100))
 
@@ -250,6 +260,81 @@ def main():
     save_name = os.path.join(work_dir + '_' + RACETRACK, "laptimes_plot.png")
     plot_durations_save(laptimes, save_path=save_name)
     print(f"Laptime plot saved to: {save_name}")
+
+
+# def main():
+#     today = get_today()
+#     work_dir = "./" + today
+#     os.makedirs(work_dir + '_' + RACETRACK)
+
+#     env = gym.make('f110_gym:f110-v0',
+#                    map="{}/maps/{}".format(current_dir, RACETRACK),
+#                    map_ext=".png", num_agents=1)
+#     q = Qnet()
+#     q_target = Qnet()
+#     q_target.load_state_dict(q.state_dict())
+#     memory = PrioritizedReplayBuffer()
+
+#     poses = np.array([[0., 0., np.radians(270)]])
+#     print_interval = 10
+#     optimizer = optim.Adam(q.parameters(), lr=learning_rate)
+#     speed = 3.0
+#     fastlap = 10000.0
+#     laptimes = []
+
+#     for n_epi in range(10000):
+#         epsilon = max(0.01, 0.11 - 0.1 * (n_epi / 10000))  # Linear annealing from 8% to 1%
+#         obs, r, done, info = env.reset(poses=poses)
+#         lidar = preprocess_lidar(obs['scans'][0])
+#         speed = np.array([obs['linear_vels_x'][0]])
+#         yaw = np.array([obs['poses_theta'][0]])
+#         s = np.concatenate([lidar, speed, yaw])
+#         done = False
+
+#         laptime = 0.0
+
+#         while not done:
+#             actions = []
+#             a = q.sample_action(torch.from_numpy(s).float(), epsilon, memory.size())
+#             steer, speed = decode_action(a)
+#             actions.append([steer, speed])
+#             actions = np.array(actions)
+#             obs, r, done, info = env.step(actions)
+#             lidar_prime = preprocess_lidar(obs['scans'][0])
+#             speed_prime = np.array([obs['linear_vels_x'][0]])
+#             yaw_prime = np.array([obs['poses_theta'][0]])
+#             s_prime = np.concatenate([lidar_prime, speed_prime, yaw_prime])
+
+#             done_mask = 0.0 if done else 1.0
+#             memory.put((s, a, r, s_prime, done_mask))
+#             s = s_prime
+
+#             laptime += r
+#             env.render(mode='human_fast')
+
+#             if done:
+#                 laptimes.append(laptime)
+#                 # plot_durations(laptimes)
+#                 lap = round(obs['lap_times'][0], 3)
+#                 if int(obs['lap_counts'][0]) == 2 and fastlap > lap:
+#                     torch.save(q.state_dict(), work_dir + '_' + RACETRACK + '/fast-model' + str(
+#                         round(obs['lap_times'][0], 3)) + '_' + str(n_epi) + '.pt')
+#                     fastlap = lap
+#                     break
+
+#         if memory.size() > train_start:
+#             train_double_per(q, q_target, memory, optimizer)
+
+#         if n_epi % print_interval == 0 and n_epi != 0:
+#             q_target.load_state_dict(q.state_dict())
+#             print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%"
+#                   .format(n_epi, laptime / print_interval, memory.size(), epsilon * 100))
+
+#     print('train finish')
+#     env.close()
+#     save_name = os.path.join(work_dir + '_' + RACETRACK, "laptimes_plot.png")
+#     plot_durations_save(laptimes, save_path=save_name)
+#     print(f"Laptime plot saved to: {save_name}")
 
 def eval():
     env = gym.make('f110_gym:f110-v0',
