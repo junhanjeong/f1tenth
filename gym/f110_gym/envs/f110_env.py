@@ -551,10 +551,11 @@ class F110Env(gym.Env, utils.EzPickle):
         # # map checkpoint
         # self.checklist = np.zeros((15))  # 밑에 self.goals만큼 추가함
 
-        # map_easy3 예시
-        self.goals = [[155, 281], [272, 182], [380, 230], [1361, 1335], [1322, 1365],
-                      [1235, 1369], [1184, 1354], [293, 1383], [225, 1395],
-                      [167, 1357], [137, 1315]]
+        # map_easy3 예시 (튜닝)
+        self.goals = [[137, 1000], [163, 1333], [280, 1380], [400, 1270], [520, 1140], [700, 1050], [872, 1056], [1055, 1205], [1209, 1370], [1345, 1375], [1362, 1230], [1349, 1005], [1267, 722], [1068, 586], [799, 598], [565, 598], [425, 491], [385, 264], [200, 181], [127, 379], [118, 609]]
+        # self.goals = [[155, 281], [272, 182], [380, 230], [1361, 1335], [1322, 1365],
+        #               [1235, 1369], [1184, 1354], [293, 1383], [225, 1395],
+        #               [167, 1357], [137, 1315]]
         # 좌표 변환 적용
         res = 0.02
         origin = [-2.7, -19.32]
@@ -655,12 +656,12 @@ class F110Env(gym.Env, utils.EzPickle):
         # map_easy3
         # goals = [[155, 281], [272, 182], [380, 230], [1361, 1335], [1322, 1365], [1235, 1369], [1184, 1354],
         #          [293, 1383], [225, 1395], [167, 1357], [137, 1315]]
-        for goal in self.goals:
-            res = 0.02
-            origin = [-2.7, -19.32]
-            height = 1646
-            goal[0] = goal[0] * res + origin[0]
-            goal[1] = (height - goal[1]) * res + origin[1]
+        # for goal in self.goals:
+        #     res = 0.02
+        #     origin = [-2.7, -19.32]
+        #     height = 1646
+        #     goal[0] = goal[0] * res + origin[0]
+        #     goal[1] = (height - goal[1]) * res + origin[1]
 
         # call simulation step
         obs = self.sim.step(action)
@@ -803,6 +804,9 @@ class F110Env(gym.Env, utils.EzPickle):
             self.renderer = EnvRenderer(WINDOW_W, WINDOW_H)
             self.renderer.update_map(self.map_name, self.map_ext)
         self.renderer.update_obs(self.current_obs)
+        # >>>> [여기서 self.goals (체크포인트) 전달!] <<<<
+        self.renderer.set_checkpoints(self.goals, self.checklist)
+
         self.renderer.dispatch_events()
         self.renderer.on_draw()
         self.renderer.flip()
