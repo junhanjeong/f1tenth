@@ -548,8 +548,21 @@ class F110Env(gym.Env, utils.EzPickle):
         self.renderer = None
         self.current_obs = None
 
-        # map checkpoint
-        self.checklist = np.zeros((15))  # 추가
+        # # map checkpoint
+        # self.checklist = np.zeros((15))  # 밑에 self.goals만큼 추가함
+
+        # map_easy3 예시
+        self.goals = [[155, 281], [272, 182], [380, 230], [1361, 1335], [1322, 1365],
+                      [1235, 1369], [1184, 1354], [293, 1383], [225, 1395],
+                      [167, 1357], [137, 1315]]
+        # 좌표 변환 적용
+        res = 0.02
+        origin = [-2.7, -19.32]
+        height = 1646
+        for goal in self.goals:
+            goal[0] = goal[0] * res + origin[0]
+            goal[1] = (height - goal[1]) * res + origin[1]
+        self.checklist = np.zeros((len(self.goals),))
 
     def __del__(self):
         """
@@ -640,9 +653,9 @@ class F110Env(gym.Env, utils.EzPickle):
             goal[1] = (height - goal[1]) * res + origin[1]'''
 
         # map_easy3
-        goals = [[155, 281], [272, 182], [380, 230], [1361, 1335], [1322, 1365], [1235, 1369], [1184, 1354],
-                 [293, 1383], [225, 1395], [167, 1357], [137, 1315]]
-        for goal in goals:
+        # goals = [[155, 281], [272, 182], [380, 230], [1361, 1335], [1322, 1365], [1235, 1369], [1184, 1354],
+        #          [293, 1383], [225, 1395], [167, 1357], [137, 1315]]
+        for goal in self.goals:
             res = 0.02
             origin = [-2.7, -19.32]
             height = 1646
@@ -668,7 +681,7 @@ class F110Env(gym.Env, utils.EzPickle):
             reward -= 2 # 5
 
         # 2. 체크포인트 도달 보상
-        for i, goal in enumerate(goals):
+        for i, goal in enumerate(self.goals):
             if self.checklist[i] == 1:
                 continue
             if obs['poses_x'][0] > goal[0] - 0.5 and obs['poses_x'][0] < goal[0] + 0.5 and obs['poses_y'][0] > goal[
@@ -687,7 +700,7 @@ class F110Env(gym.Env, utils.EzPickle):
         # 4. 최종 완주 보상
         if self.lap_counts[0] > 0 and self.lap_counts[0] != self.pre_lap_counts[0]:
             reward += 100  # 한 바퀴 돌았을 때 추가 보상
-            self.checklist = np.zeros((len(goals),))
+            self.checklist = np.zeros((len(self.goals),))
 
         # 5. 충돌/완주로 인한 done 체크
         if done or np.all(self.checklist):  # 모든 goal 다 지나면 종료할지 여부 결정(필요시)
