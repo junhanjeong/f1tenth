@@ -673,23 +673,41 @@ class F110Env(gym.Env, utils.EzPickle):
         # times
         # reward = 1000 * self.timestep
         # 1. 기본 시간 penalty (느리게 돌면 불리!)
-        reward = -0.1
+        reward = -0.01
         # if np.argmin(obs['scans'][0]) >= 300 and np.argmin(obs['scans'][0]) <= 780:
         #     reward -= 1
         # elif np.argmin(obs['scans'][0]) < 300 or np.argmin(obs['scans'][0]) > 780:
         #     reward += 2
-        if min(obs['scans'][0]) < 0.5:
-            reward -= 1 # 5
+        # if min(obs['scans'][0]) < 0.5:
+        #     reward -= 1 # 5
 
-        # 2. 체크포인트 도달 보상
-        for i, goal in enumerate(self.goals):
-            if self.checklist[i] == 1:
-                continue
-            if obs['poses_x'][0] > goal[0] - 0.5 and obs['poses_x'][0] < goal[0] + 0.5 and obs['poses_y'][0] > goal[
-                1] - 0.5 and obs['poses_y'][0] < goal[1] + 0.5:
-                # print('goal pass')
-                self.checklist[i] = 1
-                reward += 10 # 5
+        # # 2. 체크포인트 도달 보상
+        # for i, goal in enumerate(self.goals):
+        #     if self.checklist[i] == 1:
+        #         continue
+        #     if obs['poses_x'][0] > goal[0] - 0.5 and obs['poses_x'][0] < goal[0] + 0.5 and obs['poses_y'][0] > goal[
+        #         1] - 0.5 and obs['poses_y'][0] < goal[1] + 0.5:
+        #         # print('goal pass')
+        #         self.checklist[i] = 1
+        #         reward += 10 # 5
+        
+        # 아직 안 지난 checkpoint 중 가장 앞의 index
+        next_goal_idx = np.where(self.checklist == 0)[0][0] if np.any(self.checklist == 0) else 0
+        goal = self.goals[next_goal_idx]
+        
+        # prev_dist가 없는 경우는 현재 거리로 초기화(처음 step)
+        prev_dist = getattr(self, 'prev_dist', None)
+        now_dist = np.linalg.norm([
+            obs['poses_x'][0] - goal[0],
+            obs['poses_y'][0] - goal[1]
+        ])
+        if prev_dist is not None:
+            reward += (prev_dist - now_dist) * 5.0  # scale은 실험적으로 조정
+        self.prev_dist = now_dist  # 다음 step을 위해 기록
+        
+        if abs(obs['poses_x'][0] - goal[0]) < 0.5 and abs(obs['poses_y'][0] - goal[1]) < 0.5:
+            self.checklist[next_goal_idx] = 1
+            reward += 10
         
         # 3. 충돌시 패널티
         if self.collisions[self.ego_idx]:
@@ -715,6 +733,8 @@ class F110Env(gym.Env, utils.EzPickle):
         # check done
         done, toggle_list = self._check_done()
         info = {'checkpoint_done': toggle_list}
+        if done:
+            self.prev_dist = None  # episode 종료시 거리 초기화
         # if self.collisions[self.ego_idx]:
         #     reward = 0
         # if self.lap_counts[0] != self.pre_lap_counts[0]:
@@ -745,6 +765,7 @@ class F110Env(gym.Env, utils.EzPickle):
 
         # --- 체크포인트 보상 초기화 추가 ---
         self.checklist = np.zeros((len(self.goals),))
+        self.prev_dist = None
 
         # states after reset
         self.start_xs = poses[:, 0]
