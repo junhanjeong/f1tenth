@@ -673,13 +673,13 @@ class F110Env(gym.Env, utils.EzPickle):
         # times
         # reward = 1000 * self.timestep
         # 1. 기본 시간 penalty (느리게 돌면 불리!)
-        reward = -0.01
+        reward = -0.1
         # if np.argmin(obs['scans'][0]) >= 300 and np.argmin(obs['scans'][0]) <= 780:
         #     reward -= 1
         # elif np.argmin(obs['scans'][0]) < 300 or np.argmin(obs['scans'][0]) > 780:
         #     reward += 2
         if min(obs['scans'][0]) < 0.5:
-            reward -= 0.05 # 5
+            reward -= 1 # 5
 
         # 2. 체크포인트 도달 보상
         for i, goal in enumerate(self.goals):
@@ -693,7 +693,7 @@ class F110Env(gym.Env, utils.EzPickle):
         
         # 3. 충돌시 패널티
         if self.collisions[self.ego_idx]:
-            reward = -50
+            reward = -100
             done = True
         else:
             done = False

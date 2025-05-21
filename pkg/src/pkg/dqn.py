@@ -168,7 +168,7 @@ def main():
     fastlap = 10000.0
     laptimes = []
 
-    for n_epi in range(100):
+    for n_epi in range(10000):
         epsilon = max(0.01, 0.08 - 0.01 * (n_epi / 200))  # Linear annealing from 8% to 1%
         obs, r, done, info = env.reset(poses=poses)
         # s = preprocess_lidar(obs['scans'][0])
@@ -282,21 +282,21 @@ def eval():
             if done:
                 break
     env.close()
-
+    
 def plot_durations_save(laptimes, save_path=None):
     plt.figure(2)
     plt.clf()
     durations_t = torch.tensor(laptimes, dtype=torch.float)
     plt.title('Training...')
     plt.xlabel('Episode')
-    plt.ylabel('Reward (or Duration)')
+    plt.ylabel('Duration')
     plt.plot(durations_t.numpy())
+    # 10개의 에피소드 평균을 가져 와서 도표 그리기
     if len(durations_t) >= 10:
         means = durations_t.unfold(0, 10, 1).mean(1).view(-1)
         means = torch.cat((torch.zeros(9), means))
         plt.plot(means.numpy())
-    # y축 최소값을 -100으로 고정
-    plt.ylim(bottom=-100)
+
     if save_path is not None:
         plt.savefig(save_path)
     plt.pause(0.001)
@@ -304,7 +304,7 @@ def plot_durations_save(laptimes, save_path=None):
         display.clear_output(wait=True)
         display.display(plt.gcf())
 
-
+        
 if __name__ == '__main__':
     main()
     # eval()
