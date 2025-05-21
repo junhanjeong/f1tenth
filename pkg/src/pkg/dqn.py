@@ -68,7 +68,7 @@ class ReplayBuffer():
 class Qnet(nn.Module):
     def __init__(self):
         super(Qnet, self).__init__()
-        self.fc1 = nn.Linear(407, 256) # 405
+        self.fc1 = nn.Linear(110, 256) # 405
         self.fc2 = nn.Linear(256, 128)
         self.fc3 = nn.Linear(128, 128)
         self.fc4 = nn.Linear(128, 21) # 5
@@ -132,9 +132,10 @@ def train(q, q_target, memory, optimizer):
 
 
 def preprocess_lidar(ranges):
-    eighth = int(len(ranges) / 8)
+    # eighth = int(len(ranges) / 8)
 
-    return np.array(ranges[eighth:-eighth: 2])
+    # return np.array(ranges[eighth:-eighth: 2])
+    return np.array(ranges[::10])
 
 STEER_VALUES = np.linspace(-np.pi/15, np.pi/15, 7)
 SPEED_VALUES = [2.0, 3.0, 4.0]

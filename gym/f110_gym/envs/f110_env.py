@@ -552,7 +552,7 @@ class F110Env(gym.Env, utils.EzPickle):
         # self.checklist = np.zeros((15))  # 밑에 self.goals만큼 추가함
 
         # map_easy3 예시 (튜닝)
-        self.goals = [[137, 1000], [163, 1333], [280, 1380], [400, 1270], [520, 1140], [700, 1050], [872, 1056], [1055, 1205], [1209, 1370], [1345, 1375], [1362, 1230], [1349, 1005], [1267, 722], [1068, 586], [799, 598], [565, 598], [425, 491], [385, 264], [200, 181], [127, 379], [118, 609]]
+        self.goals = [[124, 834], [137, 1000], [150, 1166], [163, 1333], [220, 1370], [290, 1380], [400, 1270], [520, 1140], [700, 1050], [872, 1056], [1055, 1205], [1209, 1370], [1345, 1375], [1362, 1230], [1349, 1005], [1267, 722], [1068, 586], [799, 598], [565, 598], [425, 491], [385, 264], [200, 181], [127, 379], [118, 609]]
         # self.goals = [[155, 281], [272, 182], [380, 230], [1361, 1335], [1322, 1365],
         #               [1235, 1369], [1184, 1354], [293, 1383], [225, 1395],
         #               [167, 1357], [137, 1315]]
@@ -724,7 +724,7 @@ class F110Env(gym.Env, utils.EzPickle):
 
     def reset(self, poses):
         """
-        Reset the gym environment by given poses
+             the gym environment by given poses
 
         Args:
             poses (np.ndarray (num_agents, 3)): poses to reset agents to
@@ -742,6 +742,9 @@ class F110Env(gym.Env, utils.EzPickle):
         self.near_start = True
         self.near_starts = np.array([True] * self.num_agents)
         self.toggle_list = np.zeros((self.num_agents,))
+
+        # --- 체크포인트 보상 초기화 추가 ---
+        self.checklist = np.zeros((len(self.goals),))
 
         # states after reset
         self.start_xs = poses[:, 0]
