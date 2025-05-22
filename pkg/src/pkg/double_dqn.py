@@ -12,6 +12,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from tqdm import trange
+from drivers import DisparityExtender
 
 is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython:
@@ -171,11 +173,53 @@ def preprocess_lidar(ranges):
 STEER_LIMIT = 0.4189
 N_STEER = 7
 STEER_VALUES = np.linspace(-STEER_LIMIT, STEER_LIMIT, N_STEER)
-SPEED_VALUES = [1.0]
+SPEED_VALUES = [3.0]
 def decode_action(action_idx):
     steer_idx = action_idx // len(SPEED_VALUES)
     speed_idx = action_idx % len(SPEED_VALUES)
     return STEER_VALUES[steer_idx], SPEED_VALUES[speed_idx]
+
+
+def collect_expert_data(buffer, env, driver, n_episodes=10):
+    poses = np.array([[0., 0., np.radians(270)]])
+    for epi in trange(n_episodes, desc="Collecting expert data"):
+        obs, r, done, info = env.reset(poses=poses)
+        lidar = preprocess_lidar(obs['scans'][0])
+        speed = np.array([obs['linear_vels_x'][0]])
+        yaw = np.array([obs['poses_theta'][0]])
+        s = np.concatenate([lidar, speed, yaw])
+        done = False
+        while not done:
+            # Driver의 행동 결정
+            ego_odom = {
+                'pose_x': obs['poses_x'][0],
+                'pose_y': obs['poses_y'][0],
+                'pose_theta': obs['poses_theta'][0],
+                'linear_vel_x': obs['linear_vels_x'][0],
+                'linear_vel_y': obs['linear_vels_y'][0],
+                'angular_vel_z': obs['ang_vels_z'][0],
+            }
+            scan = obs['scans'][0]
+            speed_expert, steer_expert = driver.process_lidar(scan)
+            
+            # DQN action space와 매핑
+            # steer_expert와 speed_expert를 가장 가까운 action index로 변환
+            steer_idx = (np.abs(STEER_VALUES - steer_expert)).argmin()
+            speed_idx = (np.abs(np.array(SPEED_VALUES) - speed_expert)).argmin()
+            action_idx = steer_idx * len(SPEED_VALUES) + speed_idx
+
+            actions = np.array([[steer_expert, speed_expert]])
+            obs_prime, r, done, info = env.step(actions)
+            lidar_prime = preprocess_lidar(obs_prime['scans'][0])
+            speed_prime = np.array([obs_prime['linear_vels_x'][0]])
+            yaw_prime = np.array([obs_prime['poses_theta'][0]])
+            s_prime = np.concatenate([lidar_prime, speed_prime, yaw_prime])
+
+            done_mask = 0.0 if done else 1.0
+            buffer.put((s, action_idx, r, s_prime, done_mask))
+            s = s_prime
+            obs = obs_prime
+
 
 def main():
     today = get_today()
@@ -189,6 +233,11 @@ def main():
     q_target = Qnet()
     q_target.load_state_dict(q.state_dict())
     memory = PrioritizedReplayBuffer()
+
+    # === Expert Buffer Pre-fill ===
+    expert_driver = DisparityExtender()
+    collect_expert_data(memory, env, expert_driver, n_episodes=15)  # 원하는 만큼
+    print(f"Expert prefill 완료: {memory.size()}개")
 
     poses = np.array([[0., 0., np.radians(270)]])
     print_interval = 10
