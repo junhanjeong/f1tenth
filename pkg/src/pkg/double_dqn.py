@@ -241,8 +241,9 @@ def main():
             env.render(mode='human_fast')
 
         # 변경: 충돌로 종료된 에피소드였다면, 다음 에피소드 reset 용으로 poses 리스트 저장
-        if collision_occurred and len(episode_poses) > 300:
-            previous_reset_poses = episode_poses[:-300]
+        if collision_occurred and len(episode_poses) > 230:
+            restart_min = len(episode_poses) // 2
+            previous_reset_poses = episode_poses[:-100]
         else:
             # 정상 완주했거나 poses 가 비어있으면 기본 초기 위치로 돌아감
             previous_reset_poses = None
