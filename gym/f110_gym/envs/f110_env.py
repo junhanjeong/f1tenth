@@ -745,7 +745,7 @@ class F110Env(gym.Env, utils.EzPickle):
         for idx in close_penalty_points_indices:
             # 아직 패널티를 부여하지 않은 경우에만 부여
             if self.penalty_checklist[idx] == 0:
-                # reward = -1
+                reward = -1
                 done = True
                 self.penalty_checklist[idx] = 1 # 한 번 패널티를 부여했음을 표시
 
