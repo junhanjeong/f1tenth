@@ -110,7 +110,7 @@ def dqn_reward(action_idx, collision):
     if collision:
         return -1.0
     elif action_idx == 1:
-        return 0.2
+        return 0.15
     else:
         return 0.05
 

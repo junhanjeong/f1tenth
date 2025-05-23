@@ -116,11 +116,18 @@ class EnvRenderer(pyglet.window.Window):
         # 추가: 체크포인트 저장용 변수
         self.checkpoints = None  # [(x, y), ...]
         self.checkpoint_status = None  # np.array, 0/1
+
+        self.penalty_checkpoints = None  # [(x, y), ...]
+        self.penalty_checkpoint_status = None  # np.array, 0/1
     
     # 체크포인트 세팅 함수 추가
     def set_checkpoints(self, checkpoints, checklist):
         self.checkpoints = checkpoints  # 리스트 [[x, y], ...]
         self.checkpoint_status = checklist  # np.array([0, 1, ...])
+
+    def set_penalty_checkpoints(self, checkpoints, checklist):
+        self.penalty_checkpoints = checkpoints  # 리스트 [[x, y], ...]
+        self.penalty_checkpoint_status = checklist  # np.array([0, 1, ...])
 
     def update_map(self, map_path, map_ext):
         """
@@ -309,6 +316,8 @@ class EnvRenderer(pyglet.window.Window):
         self.fps_display.draw()
         if self.checkpoints is not None:
             self.draw_checkpoints()
+        if self.penalty_checkpoints is not None:
+            self.draw_penalty_checkpoints()
         # Remove default modelview matrix
         glPopMatrix()
 
@@ -324,6 +333,23 @@ class EnvRenderer(pyglet.window.Window):
                 glColor3f(0.0, 1.0, 0.0)  # 통과: 초록
             else:
                 glColor3f(1.0, 0.0, 0.0)  # 미통과: 빨강
+            glVertex3f(50. * x, 50. * y, 0.0)  # 배율은 자동차, 맵과 맞춤
+        glEnd()
+        # 색상, 포인트 크기 원복(생략 가능)
+        glColor3f(1.0, 1.0, 1.0)
+        glPointSize(1)
+
+    def draw_penalty_checkpoints(self):
+        point_size = 10  # 점 크기 (화면상 픽셀 단위)
+        glPointSize(point_size)
+        glBegin(GL_POINTS)
+        for i, pt in enumerate(self.penalty_checkpoints):
+            x, y = pt
+            # 상태에 따라 색상 지정
+            if self.penalty_checkpoint_status is not None and self.penalty_checkpoint_status[i]:
+                glColor3f(0.0, 0.0, 1.0)  # 통과: blue
+            else:
+                glColor3f(1.0, 1.0, 0.0)  # 미통과: yellow
             glVertex3f(50. * x, 50. * y, 0.0)  # 배율은 자동차, 맵과 맞춤
         glEnd()
         # 색상, 포인트 크기 원복(생략 가능)

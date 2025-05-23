@@ -559,6 +559,7 @@ class F110Env(gym.Env, utils.EzPickle):
         # self.goals = [[155, 281], [272, 182], [380, 230], [1361, 1335], [1322, 1365],
         #               [1235, 1369], [1184, 1354], [293, 1383], [225, 1395],
         #               [167, 1357], [137, 1315]]
+        self.penalty_points = [[145, 1530]]
         # 좌표 변환 적용
         res = 0.02
         origin = [-2.7, -19.32]
@@ -567,6 +568,11 @@ class F110Env(gym.Env, utils.EzPickle):
             goal[0] = goal[0] * res + origin[0]
             goal[1] = (height - goal[1]) * res + origin[1]
         self.checklist = np.zeros((len(self.goals),))
+
+        for penalty_point in self.penalty_points:
+            penalty_point[0] = penalty_point[0] * res + origin[0]
+            penalty_point[1] = (height - penalty_point[1]) * res + origin[1]
+        self.penalty_checklist = np.zeros((len(self.penalty_points),))
 
     def __del__(self):
         """
@@ -685,8 +691,8 @@ class F110Env(gym.Env, utils.EzPickle):
         curr_dist = np.linalg.norm(goal - pos)
         if hasattr(self, 'prev_goal_dist') and self.prev_goal_dist is not None:
             # 거리가 줄어들면 양수, 늘어나면 음수
-            reward += (self.prev_goal_dist - curr_dist) * 5.0
-            reward = float(np.clip(reward, -0.1, 0.1))
+            reward += (self.prev_goal_dist - curr_dist) * 8.0
+            reward = float(np.clip(reward, -0.1, 0.2))
         self.prev_goal_dist = curr_dist
         
         # # 2. speed reward: 전진 속도 장려
@@ -733,6 +739,16 @@ class F110Env(gym.Env, utils.EzPickle):
         done, toggle_list = self._check_done()
         info = {'checkpoint_done': toggle_list}
 
+        penalty_points_np = np.array(self.penalty_points)
+        penalty_dists = np.linalg.norm(penalty_points_np - pos, axis=1)
+        close_penalty_points_indices = np.where(penalty_dists < 2.0)[0]
+        for idx in close_penalty_points_indices:
+            # 아직 패널티를 부여하지 않은 경우에만 부여
+            if self.penalty_checklist[idx] == 0:
+                # reward = -1
+                done = True
+                self.penalty_checklist[idx] = 1 # 한 번 패널티를 부여했음을 표시
+
         # ─── scale the original reward into (roughly) [–1,1]
         SCALE_FACTOR = 1.0  # pick a constant ~= max magnitude of your old per-step reward
         reward = reward / SCALE_FACTOR
@@ -762,6 +778,7 @@ class F110Env(gym.Env, utils.EzPickle):
 
         # --- 체크포인트 보상 초기화 추가 ---
         self.checklist = np.zeros((len(self.goals),))
+        self.penalty_checklist = np.zeros((len(self.penalty_points),))
         self.prev_dist = None
 
         # states after reset
@@ -827,6 +844,7 @@ class F110Env(gym.Env, utils.EzPickle):
         self.renderer.update_obs(self.current_obs)
         # >>>> [여기서 self.goals (체크포인트) 전달!] <<<<
         self.renderer.set_checkpoints(self.goals, self.checklist)
+        self.renderer.set_penalty_checkpoints(self.penalty_points, self.penalty_checklist)
 
         self.renderer.dispatch_events()
         self.renderer.on_draw()
