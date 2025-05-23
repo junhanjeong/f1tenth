@@ -709,7 +709,7 @@ class F110Env(gym.Env, utils.EzPickle):
         # # 4. checkpoint 통과 보상
         if curr_dist < 1.7 and self.checklist[next_idx] == 0:
             self.checklist[next_idx] = 1
-            # reward += 15.0
+            reward += 0.15
 
         # 5. steering penalty: 급격한 스티어링 조작 억제
         # steer = action[0,1]  # [가속도, 스티어링] 중 스티어링 값
