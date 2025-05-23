@@ -108,7 +108,7 @@ def make_state(prev, curr):
 # --- Reward shaping ---
 def dqn_reward(action_idx, collision):
     if collision:
-        return -1.0
+        return -1.5
     elif action_idx == 1:
         return 0.15
     else:
@@ -184,6 +184,13 @@ def main():
             action_np = np.array([[steer, SPEED]])
             obs2, r, done, info = env.step(action_np)
             lidar1 = preprocess_lidar(obs2['scans'][0])
+
+            # 왼쪽 트랙에 붙으면 보상
+            OPTIMAL_LEFT_DISTANCE_MAX = 0.16
+            left_lidar_avg = np.mean(lidar1[0:5])
+            if left_lidar_avg < OPTIMAL_LEFT_DISTANCE_MAX:
+                r += 0.05
+
             next_state = make_state(curr, lidar1) if not done else make_state(curr, curr)
             collision = bool(obs2['collisions'][0])
             r += clip_reward(dqn_reward(action, collision))
