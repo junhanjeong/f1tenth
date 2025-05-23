@@ -168,13 +168,31 @@ def main():
     beta_start = 0.4
     epsilon = 1.0
 
+    # 변경: 이전 에피소드에서 충돌 직전까지 모아둔 poses 리스트
+    previous_reset_poses = None
+
     for episode in range(10000):
         epsilon = max(0.1, epsilon * 0.99994)
-        obs, _, _, _ = env.reset(poses=np.array([[0., 0., np.radians(270)]]))
+
+        # 변경: reset 시 사용할 poses 결정
+        if previous_reset_poses and len(previous_reset_poses) > 6:
+            # 충돌 전 궤적 중 하나를 랜덤 선택
+            pose = random.choice(previous_reset_poses)
+            reset_poses = np.array([pose], dtype=np.float32)
+        else:
+            # 기본 시작 위치
+            reset_poses = np.array([[0., 0., np.radians(270)]], dtype=np.float32)
+
+        obs, _, _, _ = env.reset(poses=reset_poses)
         lidar0 = preprocess_lidar(obs['scans'][0])
         prev = lidar0.copy()
         curr = lidar0.copy()
         state = make_state(prev, curr)
+
+        # 변경: 이번 에피소드의 궤적(충돌 전 poses) 저장할 리스트
+        episode_poses = []
+        collision_occurred = False
+        
         done = False
         laptime = 0.0
 
@@ -183,9 +201,19 @@ def main():
             steer = STEER_VALUES[action]
             action_np = np.array([[steer, SPEED]])
             obs2, r, done, info = env.step(action_np)
+
+            # 변경: 부딪히기 전까지의 위치(poses) 저장
+            if not done:
+                x = obs2['poses_x'][0]
+                y = obs2['poses_y'][0]
+                theta = obs2['poses_theta'][0]
+                episode_poses.append([x, y, theta])
+
             lidar1 = preprocess_lidar(obs2['scans'][0])
             next_state = make_state(curr, lidar1) if not done else make_state(curr, curr)
             collision = bool(obs2['collisions'][0])
+            if collision:
+                collision_occurred = True
             r += clip_reward(dqn_reward(action, collision))
             memory.add((state, action, r, next_state, 0.0 if done else 1.0))
             state = next_state
@@ -211,6 +239,13 @@ def main():
                     q_target.load_state_dict(q_net.state_dict())
 
             env.render(mode='human_fast')
+
+        # 변경: 충돌로 종료된 에피소드였다면, 다음 에피소드 reset 용으로 poses 리스트 저장
+        if collision_occurred and len(episode_poses) > 300:
+            previous_reset_poses = episode_poses[:-300]
+        else:
+            # 정상 완주했거나 poses 가 비어있으면 기본 초기 위치로 돌아감
+            previous_reset_poses = None
 
         if episode % 10 == 0:
             print(f"Episode {episode} | LapReward: {laptime:.2f} | Buffer: {len(memory)} | Eps: {epsilon:.3f}")
