@@ -12,7 +12,7 @@ from collections import deque
 from tqdm import trange
 
 # Hyperparameters
-LR = 3e-4
+LR = 0.00042 # 3e-4
 GAMMA = 0.98
 BUFFER_SIZE = 50000
 BATCH_SIZE = 32
@@ -172,8 +172,6 @@ def main():
     previous_reset_poses = None
 
     for episode in range(10000):
-        epsilon = max(0.1, epsilon * 0.99994)
-
         # 변경: reset 시 사용할 poses 결정
         if previous_reset_poses and len(previous_reset_poses) > 6:
             # 충돌 전 궤적 중 하나를 랜덤 선택
@@ -197,6 +195,7 @@ def main():
         laptime = 0.0
 
         while not done:
+            epsilon = max(0.1, epsilon * 0.99994)
             action = q_net.act(state, epsilon)
             steer = STEER_VALUES[action]
             action_np = np.array([[steer, SPEED]])
