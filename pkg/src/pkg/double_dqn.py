@@ -12,7 +12,7 @@ from collections import deque
 from tqdm import trange
 
 # Hyperparameters
-LR = 3e-4
+LR = 0.00042
 GAMMA = 0.98
 BUFFER_SIZE = 50000
 BATCH_SIZE = 32
@@ -169,7 +169,6 @@ def main():
     epsilon = 1.0
 
     for episode in range(10000):
-        epsilon = max(0.1, epsilon * 0.99994)
         obs, _, _, _ = env.reset(poses=np.array([[0., 0., np.radians(270)]]))
         lidar0 = preprocess_lidar(obs['scans'][0])
         prev = lidar0.copy()
@@ -179,6 +178,7 @@ def main():
         laptime = 0.0
 
         while not done:
+            epsilon = max(0.1, epsilon * 0.99994)
             action = q_net.act(state, epsilon)
             steer = STEER_VALUES[action]
             action_np = np.array([[steer, SPEED]])

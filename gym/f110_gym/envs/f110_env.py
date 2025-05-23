@@ -683,10 +683,10 @@ class F110Env(gym.Env, utils.EzPickle):
         goal = np.array(self.goals[next_idx])
         pos  = np.array([obs['poses_x'][0], obs['poses_y'][0]])
         curr_dist = np.linalg.norm(goal - pos)
-        # if hasattr(self, 'prev_goal_dist') and self.prev_goal_dist is not None:
-        #     # 거리가 줄어들면 양수, 늘어나면 음수
-        #     reward += (self.prev_goal_dist - curr_dist) * 1.0
-        #     reward = float(np.clip(reward, -0.03, 0.03))
+        if hasattr(self, 'prev_goal_dist') and self.prev_goal_dist is not None:
+            # 거리가 줄어들면 양수, 늘어나면 음수
+            reward += (self.prev_goal_dist - curr_dist) * 5.0
+            reward = float(np.clip(reward, -0.1, 0.1))
         self.prev_goal_dist = curr_dist
         
         # # 2. speed reward: 전진 속도 장려
