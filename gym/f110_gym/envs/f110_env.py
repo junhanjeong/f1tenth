@@ -657,22 +657,38 @@ class F110Env(gym.Env, utils.EzPickle):
 
         self.current_obs = obs
         # times
-        reward = 1000 * self.timestep
-        if np.argmin(obs['scans'][0]) >= 300 and np.argmin(obs['scans'][0]) <= 780:
-            reward -= 1
-        elif np.argmin(obs['scans'][0]) < 300 or np.argmin(obs['scans'][0]) > 780:
-            reward += 2
-        if min(obs['scans'][0]) < 0.5:
-            reward -= 5
+        reward = 0.01 # 1000 * self.timestep
 
-        '''for i, goal in enumerate(goals):
+        # 랩 완료 보상
+        if self.lap_counts[self.ego_idx] > self.pre_lap_counts[self.ego_idx]:
+            reward += 1
+    
+        # # 속도 보상
+        # SPEED_COEFF = 0.01
+        # reward += SPEED_COEFF * action[0,1]
+
+        # # 정면 경로 확보 보상
+        # front_scans = obs['scans'][self.ego_idx][self.FRONT_INDICES]
+        # if np.mean(front_scans) > self.SAFE_FRONT_DISTANCE:
+        #     reward += self.FRONT_CLEARANCE_REWARD
+
+        # if np.argmin(obs['scans'][0]) >= 300 and np.argmin(obs['scans'][0]) <= 780:
+        #     reward -= 1
+        # elif np.argmin(obs['scans'][0]) < 300 or np.argmin(obs['scans'][0]) > 780:
+        #     reward += 2
+        # if min(obs['scans'][0]) < 0.5:
+        #     reward -= 5
+
+        for i, goal in enumerate(goals):
             if self.checklist[i] == 1:
                 continue
             if obs['poses_x'][0] > goal[0] - 0.5 and obs['poses_x'][0] < goal[0] + 0.5 and obs['poses_y'][0] > goal[
                 1] - 0.5 and obs['poses_y'][0] < goal[1] + 0.5:
-                print('goal pass')
+                # print('goal pass')
                 self.checklist[i] = 1
-                reward += 5'''
+                reward += 0.5
+
+
 
         self.current_time = self.current_time + self.timestep
 
@@ -683,7 +699,7 @@ class F110Env(gym.Env, utils.EzPickle):
         done, toggle_list = self._check_done()
         info = {'checkpoint_done': toggle_list}
         if self.collisions[self.ego_idx]:
-            reward = 0
+            reward = -1
         if self.lap_counts[0] != self.pre_lap_counts[0]:
             self.checklist = np.zeros((15))
 

@@ -24,7 +24,7 @@ learning_rate = 0.00005
 gamma = 0.98
 buffer_limit = 50000
 batch_size = 32
-train_start = 20000
+train_start = 7000
 
 current_dir = os.path.abspath(os.path.dirname(__file__))
 sys.path.append(current_dir)
@@ -68,15 +68,15 @@ class ReplayBuffer():
 class Qnet(nn.Module):
     def __init__(self):
         super(Qnet, self).__init__()
-        self.fc1 = nn.Linear(405, 256)
-        self.fc2 = nn.Linear(256, 128)
-        self.fc3 = nn.Linear(128, 128)
-        self.fc4 = nn.Linear(128, 5)
+        # self.fc1 = nn.Linear(405, 256)
+        # self.fc2 = nn.Linear(256, 128)
+        # self.fc3 = nn.Linear(128, 128)
+        self.fc4 = nn.Linear(270, 5)
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
+        # x = F.relu(self.fc1(x))
+        # x = F.relu(self.fc2(x))
+        # x = F.relu(self.fc3(x))
         x = self.fc4(x)
         return x
 
@@ -134,7 +134,85 @@ def train(q, q_target, memory, optimizer):
 def preprocess_lidar(ranges):
     eighth = int(len(ranges) / 8)
 
-    return np.array(ranges[eighth:-eighth: 2])
+    return np.array(ranges[eighth:-eighth: 3])
+
+# disparity Extender 방식: difference를 구하는 함수
+def get_differences(ranges):
+    """ Gets the absolute difference between adjacent elements in
+        in the LiDAR data and returns them in an array.
+        Possible Improvements: replace for loop with numpy array arithmetic
+    """
+    differences = [0.]  # set first element to 0
+    for i in range(1, len(ranges)):
+        differences.append(abs(ranges[i] - ranges[i - 1]))
+    return differences
+
+# disparity Extender 방식: threshold를 넘는 disparity index를 구하는 함수
+def get_disparities(differences, threshold):
+    """ Gets the indexes of the LiDAR points that were greatly
+        different to their adjacent point.
+        Possible Improvements: replace for loop with numpy array arithmetic
+    """
+    disparities = []
+    for index, difference in enumerate(differences):
+        if difference > threshold:
+            disparities.append(index)
+    return disparities
+
+def extend_disparities(disparities, ranges, car_width, extra_pct):
+    """ For each pair of points we have decided have a large difference
+        between them, we choose which side to cover (the opposite to
+        the closer point), call the cover function, and return the
+        resultant covered array.
+        Possible Improvements: reduce to fewer lines
+    """
+    width_to_cover = (car_width / 2) * (1 + extra_pct / 100)
+    for index in disparities:
+        first_idx = index - 1
+        points = ranges[first_idx:first_idx + 2]
+        close_idx = first_idx + np.argmin(points)
+        far_idx = first_idx + np.argmax(points)
+        close_dist = ranges[close_idx]
+        num_points_to_cover = get_num_points_to_cover(close_dist,
+                                                            width_to_cover)
+        cover_right = close_idx < far_idx
+        ranges = cover_points(num_points_to_cover, close_idx,
+                                    cover_right, ranges)
+    return ranges
+
+def get_num_points_to_cover(dist, width):
+    radians_per_point = (2 * np.pi) / 1080 * 3 # 나는 3개씩 건너뛰니까 3을 곱해줌
+
+    angle = 2 * np.arcsin(width / (2 * dist))
+    num_points = int(np.ceil(angle / radians_per_point))
+    return num_points
+
+def cover_points(num_points, start_idx, cover_right, ranges):
+    new_dist = ranges[start_idx]
+    if cover_right:
+        for i in range(num_points):
+            next_idx = start_idx + 1 + i
+            if next_idx >= len(ranges): break
+            if ranges[next_idx] > new_dist:
+                ranges[next_idx] = new_dist
+    else:
+        for i in range(num_points):
+            next_idx = start_idx - 1 - i
+            if next_idx < 0: break
+            if ranges[next_idx] > new_dist:
+                ranges[next_idx] = new_dist
+    return ranges
+
+def preprocess_lidar_all(ranges):
+    DIFFERENCE_THRESHOLD = 2
+    CAR_WIDTH = 0.31
+    SAFETY_PERCENTAGE = 300
+    proc_ranges = preprocess_lidar(ranges)
+    differences = get_differences(proc_ranges)
+    disparities = get_disparities(differences, DIFFERENCE_THRESHOLD)
+    proc_ranges = extend_disparities(disparities, proc_ranges, CAR_WIDTH, SAFETY_PERCENTAGE)
+
+    return proc_ranges
 
 
 def main():
@@ -154,22 +232,75 @@ def main():
     poses = np.array([[0., 0., np.radians(270)]])
     # poses = np.array([[0.8007017, -0.2753365, 4.1421595]])
 
+    # ---- Prefill ReplayBuffer with rule-based transitions ----
+    poses = np.array([[0., 0., np.radians(270)]])
+    for _ in range(2): # 에피소드 2번
+        env_prefill = gym.make('f110_gym:f110-v0',
+                            map="{}/maps/{}".format(current_dir, RACETRACK),
+                            map_ext=".png", num_agents=1)
+        obs, r, done, info = env_prefill.reset(poses=poses)
+        s = preprocess_lidar_all(obs['scans'][0])
+        done = False
+        # tmp_reward = 0.0
+        while not done:
+            # np.argmax로 가장 먼 곳 인덱스
+            idx = np.argmax(s)
+            rel = idx - 135   # 0~269에서 135 중심
+            
+            # 행동 결정: 대칭 (좌/우)
+            if -4 <= rel <= 4:
+                a = 2  # 직진
+            elif 5 <= rel <= 9:
+                a = 3  # 우회전
+            elif rel >= 10:
+                a = 4  # 강한 우회전
+            elif -9 <= rel <= -5:
+                a = 1  # 좌회전
+            elif rel <= -10:
+                a = 0  # 강한 좌회전
+            else:
+                a = 2  # 예외적으로 직진
+
+            steer = (a - 2) * (np.pi / 30)
+            if a == 2:
+                speed = 5.0
+            elif a == 1 or a == 3:
+                speed = 4.5
+            else:
+                speed = 4.0
+
+            actions = np.array([[steer, speed]])
+            obs2, r, done, info = env_prefill.step(actions)
+            s_prime = preprocess_lidar_all(obs2['scans'][0])
+            done_mask = 0.0 if done else 1.0
+            memory.put((s, a, r / 100, s_prime, done_mask))
+            s = s_prime
+            # env_prefill.render(mode='human_fast')
+            # tmp_reward += r
+
+        # print('reward:', tmp_reward)
+        env_prefill.close()
+    print(f'Prefilled buffer: {memory.size()} transitions')
+    # ---- Prefill 끝 ----
+
     print_interval = 10
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)
     speed = 3.0
     fastlap = 10000.0
     laptimes = []
+    total_rewards = []
 
     for n_epi in range(10000):
         epsilon = max(0.01, 0.08 - 0.01 * (n_epi / 200))  # Linear annealing from 8% to 1%
         obs, r, done, info = env.reset(poses=poses)
-        s = preprocess_lidar(obs['scans'][0])
+        s = preprocess_lidar_all(obs['scans'][0])
         done = False
 
         laptime = 0.0
+        total_reward = 0.0
 
         while not done:
-            env.render(mode='human_fast')
+            # env.render(mode='human_fast')
 
             actions = []
 
@@ -184,17 +315,18 @@ def main():
             actions.append([steer, speed])
             actions = np.array(actions)
             obs, r, done, info = env.step(actions)
-            s_prime = preprocess_lidar(obs['scans'][0])
+            s_prime = preprocess_lidar_all(obs['scans'][0])
             done_mask = 0.0 if done else 1.0
             memory.put((s, a, r / 100, s_prime, done_mask))
             s = s_prime
 
-            laptime += r
+            laptime += 0.01
+            total_reward += r
             env.render(mode='human_fast')
 
             if done:
-                laptimes.append(laptime)
-                # plot_durations(laptimes)
+                total_rewards.append(total_reward)
+                # plot_durations(total_rewards)
                 lap = round(obs['lap_times'][0], 3)
                 if int(obs['lap_counts'][0]) == 2 and fastlap > lap:
                     torch.save(q.state_dict(), work_dir + '_' + RACETRACK + '/fast-model' + str(
@@ -207,8 +339,8 @@ def main():
 
         if n_epi % print_interval == 0 and n_epi != 0:
             q_target.load_state_dict(q.state_dict())
-            print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%"
-                  .format(n_epi, laptime / print_interval, memory.size(), epsilon * 100))
+            print("n_episode :{}, laptime : {:.1f}, reward : {:.1f}, lap_counts: {}, n_buffer : {}, eps : {:.1f}%"
+                  .format(n_epi, laptime, total_reward, obs['lap_counts'][0], memory.size(), epsilon * 100))
 
     print('train finish')
     env.close()
@@ -225,7 +357,7 @@ def eval():
     speed = 3.0
     for t in range(5):
         obs, r, done, info = env.reset(poses=poses)
-        s = preprocess_lidar(obs['scans'][0])
+        s = preprocess_lidar_all(obs['scans'][0])
 
         env.render()
         done = False
@@ -246,7 +378,7 @@ def eval():
             actions.append([steer, speed])
             actions = np.array(actions)
             obs, r, done, info = env.step(actions)
-            s_prime = preprocess_lidar(obs['scans'][0])
+            s_prime = preprocess_lidar_all(obs['scans'][0])
 
             s = s_prime
 
