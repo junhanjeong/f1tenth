@@ -657,11 +657,11 @@ class F110Env(gym.Env, utils.EzPickle):
 
         self.current_obs = obs
         # times
-        reward = 0.01 # 1000 * self.timestep
+        reward = 0 # 0.01 # 1000 * self.timestep
 
         # 랩 완료 보상
         if self.lap_counts[self.ego_idx] > self.pre_lap_counts[self.ego_idx]:
-            reward += 1
+            reward += 2
     
         # # 속도 보상
         # SPEED_COEFF = 0.01
@@ -699,7 +699,7 @@ class F110Env(gym.Env, utils.EzPickle):
         done, toggle_list = self._check_done()
         info = {'checkpoint_done': toggle_list}
         if self.collisions[self.ego_idx]:
-            reward = -1
+            reward = -2
         if self.lap_counts[0] != self.pre_lap_counts[0]:
             self.checklist = np.zeros((15))
 

@@ -241,7 +241,7 @@ def main():
         obs, r, done, info = env_prefill.reset(poses=poses)
         s = preprocess_lidar_all(obs['scans'][0])
         done = False
-        # tmp_reward = 0.0
+        tmp_reward = 0.0
         while not done:
             # np.argmax로 가장 먼 곳 인덱스
             idx = np.argmax(s)
@@ -276,9 +276,9 @@ def main():
             memory.put((s, a, r / 100, s_prime, done_mask))
             s = s_prime
             # env_prefill.render(mode='human_fast')
-            # tmp_reward += r
+            tmp_reward += r
 
-        # print('reward:', tmp_reward)
+        print('reward:', tmp_reward)
         env_prefill.close()
     print(f'Prefilled buffer: {memory.size()} transitions')
     # ---- Prefill 끝 ----
@@ -315,9 +315,26 @@ def main():
             actions.append([steer, speed])
             actions = np.array(actions)
             obs, r, done, info = env.step(actions)
+            # Disparity Extender 방식대로 보상 추가
+            idx = np.argmax(s)
+            rel = idx - 135   # 0~269에서 135 중심
+            steer_real_angle  = steer * (180 / np.pi)  # 라디안 -> 도 변환
+            if abs(rel - steer_real_angle) <= 3:
+                r += 0.04
+            elif abs(rel) < 15: # 차이 나는만큼 마이너스 보상
+                r -= abs(rel - steer_real_angle) * 0.003
+            if steer * rel < 0 and abs(rel) > 3:  # 돌려야 할 방향과 반대 방향으로 회전 돌리면
+                r -= 0.05
+            elif steer * rel > 0 and abs(rel) > 3:  # 돌려야 할 방향과 같은 방향으로 회전 돌리면
+                r += 0.05
+            if abs(rel) > 15 and abs(a) == 2 and rel * (a-2) * rel > 0: # 많이 꺾어야할때, 꺾어야할 방향으로 많이 꺾으면
+                r += 0.05
+            if abs(rel) < 3 and a != 2:  # 직진인데 회전하면
+                r -= 0.02
+
             s_prime = preprocess_lidar_all(obs['scans'][0])
             done_mask = 0.0 if done else 1.0
-            memory.put((s, a, r / 100, s_prime, done_mask))
+            memory.put((s, a, r, s_prime, done_mask))
             s = s_prime
 
             laptime += 0.01
@@ -347,15 +364,16 @@ def main():
 
 
 def eval():
+    RACETRACK = 'map_easy3'
     env = gym.make('f110_gym:f110-v0',
                    map="{}/maps/{}".format(current_dir, RACETRACK),
                    map_ext=".png", num_agents=1)
 
     q = Qnet()
-    q.load_state_dict(torch.load("{}\weigths\model_state_dict_easy1_fin.pt".format(current_dir)))
-    poses = np.array([[0., 0., np.radians(90)]])
-    speed = 3.0
-    for t in range(5):
+    q.load_state_dict(torch.load("{}/2025-05-28_18-41-01_map_easy3_rulebase/fast-model41.2_6429.pt".format(current_dir)))
+    poses = np.array([[0., 0., np.radians(270)]])
+    # speed = 3.0
+    for t in range(1):
         obs, r, done, info = env.reset(poses=poses)
         s = preprocess_lidar_all(obs['scans'][0])
 
@@ -369,12 +387,12 @@ def eval():
 
             a = q.action(torch.from_numpy(s).float())
             steer = (a - 2) * (np.pi / 30)
-            '''if a == 2:
+            if a == 2:
                 speed = 5.0
             elif a == 1 or a == 3:
                 speed = 4.5
             else:
-                speed = 4.0'''
+                speed = 4.0
             actions.append([steer, speed])
             actions = np.array(actions)
             obs, r, done, info = env.step(actions)
@@ -391,5 +409,5 @@ def eval():
 
 
 if __name__ == '__main__':
-    main()
-    # eval()
+    # main()
+    eval()
