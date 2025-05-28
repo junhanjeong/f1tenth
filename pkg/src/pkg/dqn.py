@@ -29,7 +29,7 @@ train_start = 7000
 current_dir = os.path.abspath(os.path.dirname(__file__))
 sys.path.append(current_dir)
 
-RACETRACK = 'map_easy3'
+RACETRACK = 'map_easy3' # 'Oschersleben' # 'map_easy3'
 
 
 def get_today():
@@ -224,16 +224,15 @@ def main():
                    map="{}/maps/{}".format(current_dir, RACETRACK),
                    map_ext=".png", num_agents=1)
     q = Qnet()
-    # q.load_state_dict(torch.load("{}\weigths\model_state_dict_easy1_fin.pt".format(current_dir)))
+    q.load_state_dict(torch.load("{}/2025-05-28_18-41-01_map_easy3_rulebase/fast-model41.2_6429.pt".format(current_dir)))
     q_target = Qnet()
     q_target.load_state_dict(q.state_dict())
     memory = ReplayBuffer()
 
-    poses = np.array([[0., 0., np.radians(270)]])
-    # poses = np.array([[0.8007017, -0.2753365, 4.1421595]])
+    # poses = np.array([[0.0702245, 0.3002981, 2.79787]]) # Oschersleben
+    poses = np.array([[0., 0., np.radians(270)]]) # map_easy3
 
     # ---- Prefill ReplayBuffer with rule-based transitions ----
-    poses = np.array([[0., 0., np.radians(270)]])
     for _ in range(2): # 에피소드 2번
         env_prefill = gym.make('f110_gym:f110-v0',
                             map="{}/maps/{}".format(current_dir, RACETRACK),
@@ -273,7 +272,23 @@ def main():
             obs2, r, done, info = env_prefill.step(actions)
             s_prime = preprocess_lidar_all(obs2['scans'][0])
             done_mask = 0.0 if done else 1.0
-            memory.put((s, a, r / 100, s_prime, done_mask))
+
+            # 보상
+            steer_real_angle  = steer * (180 / np.pi)  # 라디안 -> 도 변환
+            if abs(rel - steer_real_angle) <= 3:
+                r += 0.04
+            elif abs(rel) < 15: # 차이 나는만큼 마이너스 보상
+                r -= abs(rel - steer_real_angle) * 0.003
+            if steer * rel < 0 and abs(rel) > 3:  # 돌려야 할 방향과 반대 방향으로 회전 돌리면
+                r -= 0.05
+            elif steer * rel > 0 and abs(rel) > 3:  # 돌려야 할 방향과 같은 방향으로 회전 돌리면
+                r += 0.05
+            if abs(rel) > 15 and abs(a) == 2 and rel * (a-2) * rel > 0: # 많이 꺾어야할때, 꺾어야할 방향으로 많이 꺾으면
+                r += 0.05
+            if abs(rel) < 3 and a != 2:  # 직진인데 회전하면
+                r -= 0.02
+
+            memory.put((s, a, r, s_prime, done_mask))
             s = s_prime
             # env_prefill.render(mode='human_fast')
             tmp_reward += r
@@ -291,7 +306,7 @@ def main():
     total_rewards = []
 
     for n_epi in range(10000):
-        epsilon = max(0.01, 0.08 - 0.01 * (n_epi / 200))  # Linear annealing from 8% to 1%
+        epsilon = max(0.01, 0.04 - 0.01 * (n_epi / 200))  # Linear annealing from 8% to 1%
         obs, r, done, info = env.reset(poses=poses)
         s = preprocess_lidar_all(obs['scans'][0])
         done = False
@@ -364,7 +379,7 @@ def main():
 
 
 def eval():
-    RACETRACK = 'map_easy3'
+    RACETRACK = 'Oschersleben'
     env = gym.make('f110_gym:f110-v0',
                    map="{}/maps/{}".format(current_dir, RACETRACK),
                    map_ext=".png", num_agents=1)
@@ -409,5 +424,5 @@ def eval():
 
 
 if __name__ == '__main__':
-    # main()
-    eval()
+    main()
+    # eval()
